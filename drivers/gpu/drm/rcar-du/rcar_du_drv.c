@@ -340,7 +340,71 @@ static int rcar_du_probe(struct platform_device *pdev)
 
 static int rcar_du_remove(struct platform_device *pdev)
 {
-	struct rcar_du_device *rcdu = platform_get_drvdata(pdev);
+	struct device_node *np = pdev->dev.of_node;
+	struct rcar_du_device *rcdu;
+	struct drm_connector *connector;
+	struct drm_device *ddev;
+	struct resource *mem;
+	int ret;
+
+	if (np == NULL) {
+		dev_err(&pdev->dev, "no device tree node\n");
+		return -ENODEV;
+	}
+
+	/* Allocate and initialize the DRM and R-Car device structures. */
+	rcdu = devm_kzalloc(&pdev->dev, sizeof(*rcdu), GFP_KERNEL);
+	if (rcdu == NULL)
+		return -ENOMEM;
+
+	init_waitqueue_head(&rcdu->commit.wait);
+
+	rcdu->dev = &pdev->dev;
+	rcdu->info = of_match_device(rcar_du_of_table, rcdu->dev)->data;
+
+	platform_set_drvdata(pdev, rcdu);
+
+	/* I/O resources */
+	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	rcdu->mmio = devm_ioremap_resource(&pdev->dev, mem);
+	if (IS_ERR(rcdu->mmio))
+		return PTR_ERR(rcdu->mmio);
+
+	/* DRM/KMS objects */
+	ddev = drm_dev_alloc(&rcar_du_driver, &pdev->dev);
+	if (!ddev)
+		return -ENOMEM;
+
+	drm_dev_set_unique(ddev, dev_name(&pdev->dev));
+
+	rcdu->ddev = ddev;
+	ddev->dev_private = rcdu;
+
+	ret = rcar_du_modeset_init(rcdu);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "failed to initialize DRM/KMS (%d)\n", ret);
+		goto error;
+	}
+
+	ddev->irq_enabled = 1;
+
+	/* Register the DRM device with the core and the connectors with
+	 * sysfs.
+	 */
+	ret = drm_dev_register(ddev, 0);
+	if (ret)
+		goto error;
+
+	mutex_lock(&ddev->mode_config.mutex);
+	drm_for_each_connector(connector, ddev) {
+		ret = drm_connector_register(connector);
+		if (ret < 0)
+			break;
+	}
+	mutex_unlock(&ddev->mode_config.mutex);
+
+	if (ret < 0)
+		goto error;
 
 	drm_put_dev(rcdu->ddev);
 
