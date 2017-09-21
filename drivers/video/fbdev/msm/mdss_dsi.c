@@ -34,6 +34,7 @@
 #include "mdss_debug.h"
 #include "mdss_dsi_phy.h"
 #include "mdss_dba_utils.h"
+#include <linux/param_rw.h>
 
 #define CMDLINE_DSI_CTL_NUM_STRING_LEN 2
 
@@ -725,6 +726,8 @@ struct buf_data {
 	int sblen; /* string buffer length */
 	int sync_flag;
 	struct mutex dbg_mutex; /* mutex to synchronize read/write/flush */
+    struct mdss_dsi_ctrl_pdata *ctrl;
+//#endif
 };
 
 struct mdss_dsi_debugfs_info {
@@ -1694,11 +1697,19 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 		}
 	}
 
+    if (!ctrl_pdata->setting_mode_loaded){
+        ctrl_pdata->setting_mode_loaded = true;
+        mutex_lock(&ctrl_pdata->panel_mode_lock);
+        ctrl_pdata->is_panel_on = true;
+        mutex_unlock(&ctrl_pdata->panel_mode_lock);
+    }
+//#endif
+
 	if ((pdata->panel_info.type == MIPI_CMD_PANEL) &&
 		mipi->vsync_enable && mipi->hw_vsync_mode) {
 		mdss_dsi_set_tear_on(ctrl_pdata);
 		if (mdss_dsi_is_te_based_esd(ctrl_pdata))
-			enable_irq(gpio_to_irq(ctrl_pdata->disp_te_gpio));
+                       enable_irq(gpio_to_irq(ctrl_pdata->disp_te_gpio));
 	}
 
 	ctrl_pdata->ctrl_state |= CTRL_STATE_PANEL_INIT;
@@ -1769,8 +1780,9 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata, int power_state)
 	if ((pdata->panel_info.type == MIPI_CMD_PANEL) &&
 		mipi->vsync_enable && mipi->hw_vsync_mode) {
 		if (mdss_dsi_is_te_based_esd(ctrl_pdata)) {
-				disable_irq(gpio_to_irq(
-					ctrl_pdata->disp_te_gpio));
+                                disable_irq(gpio_to_irq(
+                                       ctrl_pdata->disp_te_gpio));
+
 				atomic_dec(&ctrl_pdata->te_irq_ready);
 		}
 		mdss_dsi_set_tear_off(ctrl_pdata);
@@ -2837,6 +2849,57 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 				queue_delayed_work(ctrl_pdata->workq,
 					&ctrl_pdata->dba_work, HZ);
 		}
+		break;
+	case MDSS_EVENT_PANEL_SET_ACL:
+		ctrl_pdata->acl_mode = (int)(unsigned long) arg;
+		mdss_dsi_panel_set_acl(ctrl_pdata, (int)(unsigned long) ctrl_pdata->acl_mode);
+		break;
+	case MDSS_EVENT_PANEL_GET_ACL:
+		rc = mdss_dsi_panel_get_acl_mode(ctrl_pdata);
+		break;
+	//#endif
+	case MDSS_EVENT_PANEL_SET_HBM_MODE:
+		ctrl_pdata->hbm_mode = (int)(unsigned long) arg;
+		mdss_dsi_panel_set_hbm_mode(ctrl_pdata, (int)(unsigned long) ctrl_pdata->hbm_mode);
+		break;
+	case MDSS_EVENT_PANEL_GET_HBM_MODE:
+		rc = mdss_dsi_panel_get_hbm_mode(ctrl_pdata);
+		break;
+	//#endif
+	case MDSS_EVENT_PANEL_SET_SRGB_MODE:
+		ctrl_pdata->SRGB_mode= (int)(unsigned long) arg;
+		if(ctrl_pdata->SRGB_mode==1)
+			ctrl_pdata->dci_p3_mode=0;
+		mdss_dsi_panel_set_srgb_mode(ctrl_pdata, (int)(unsigned long) ctrl_pdata->SRGB_mode);
+		break;
+	case MDSS_EVENT_PANEL_GET_SRGB_MODE:
+		rc = mdss_dsi_panel_get_srgb_mode(ctrl_pdata);
+		break;
+	//#endif
+	case MDSS_EVENT_PANEL_SET_ADOBE_RGB_MODE:
+		ctrl_pdata->Adobe_RGB_mode= (int)(unsigned long) arg;
+		mdss_dsi_panel_set_adobe_rgb_mode(ctrl_pdata,(int)(unsigned long) ctrl_pdata->Adobe_RGB_mode);
+		break;
+	case MDSS_EVENT_PANEL_GET_ADOBE_RGB_MODE:
+		rc = mdss_dsi_panel_get_adobe_rgb_mode(ctrl_pdata);
+		break;
+	//#endif
+	case MDSS_EVENT_PANEL_SET_DCI_P3_MODE:
+		ctrl_pdata->dci_p3_mode= (int)(unsigned long) arg;
+		if(ctrl_pdata->dci_p3_mode==1)
+		ctrl_pdata->SRGB_mode=0;
+		mdss_dsi_panel_set_dci_p3_mode(ctrl_pdata,(int)(unsigned long) ctrl_pdata->dci_p3_mode);
+		break;
+	case MDSS_EVENT_PANEL_GET_DCI_P3_MODE:
+		rc = mdss_dsi_panel_get_dci_p3_mode(ctrl_pdata);
+		break;
+	//#endif
+	case MDSS_EVENT_PANEL_SET_NIGHT_MODE:
+		ctrl_pdata->night_mode= (int)(unsigned long) arg;
+		mdss_dsi_panel_set_night_mode(ctrl_pdata, (int)(unsigned long) ctrl_pdata->night_mode);
+		break;
+	case MDSS_EVENT_PANEL_GET_NIGHT_MODE:
+		rc = mdss_dsi_panel_get_night_mode(ctrl_pdata);
 		break;
 	case MDSS_EVENT_DSI_TIMING_DB_CTRL:
 		mdss_dsi_timing_db_ctrl(ctrl_pdata, (int)(unsigned long)arg);
@@ -4279,6 +4342,46 @@ static int mdss_dsi_parse_gpio_params(struct platform_device *ctrl_pdev,
 		pr_debug("%s:%d mode gpio not specified\n", __func__, __LINE__);
 		ctrl_pdata->lcd_mode_sel_gpio = -EINVAL;
 	}
+
+	ctrl_pdata->disp_vci_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+		"qcom,platform-vci-gpio", 0);
+	if (!gpio_is_valid(ctrl_pdata->disp_vci_en_gpio))
+		pr_err("%s:%d, vci gpio not specified\n",
+						__func__, __LINE__);
+	if (ctrl_pdata->iris_enabled){
+        ctrl_pdata->px_1v1_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+            "qcom,px-1v1-en-gpio", 0);
+        if (!gpio_is_valid(ctrl_pdata->px_1v1_en_gpio))
+            pr_err("%s:%d, px-1v1-en gpio not specified\n", __func__, __LINE__);
+
+        ctrl_pdata->px_bp_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node, "qcom,px-bp-gpio", 0);
+        if (gpio_is_valid(ctrl_pdata->px_bp_gpio)){
+            if (gpio_request(ctrl_pdata->px_bp_gpio, "px-bp-gpio")){
+                pr_err("%s:%d, px_bp_gpio request fail.\n", __func__, __LINE__);
+            }else
+                gpio_direction_output(ctrl_pdata->px_bp_gpio, 0);
+        }else{
+            pr_err("%s:%d, px_bp_gpio gpio not specified\n", __func__, __LINE__);
+        }
+
+        if (!of_property_read_string(ctrl_pdev->dev.of_node, "qcom,px-ext-clk", &ctrl_pdata->px_clk_src_name)){
+            if (!strcmp(ctrl_pdata->px_clk_src_name, "BBCLK2")) {
+                ctrl_pdata->px_clk_src = clk_get(&ctrl_pdev->dev, "px_ext_clk");
+                if(IS_ERR(ctrl_pdata->px_clk_src)) {
+                    pr_err("can not get px_ext_clk\n");
+                }else{
+                     clk_set_rate(ctrl_pdata->px_clk_src, 19200000);
+                     if (clk_prepare_enable(ctrl_pdata->px_clk_src)){
+                        pr_err("Enable px_clk fail!\n");
+                        ctrl_pdata->px_clk_enabled = 0;
+                    }else{
+                        ctrl_pdata->px_clk_enabled = 1;
+                    }
+                }
+            }
+        }
+    }
+//#endif
 
 	return 0;
 }
