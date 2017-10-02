@@ -12,7 +12,6 @@
 #include <linux/input.h>
 #include <linux/ioport.h>
 #include <linux/platform_device.h>
-#include <linux/proc_fs.h>
 #include <linux/gpio.h>
 #include <linux/gpio_keys.h>
 #include <linux/of_platform.h>
@@ -45,21 +44,11 @@ typedef enum {
  * see KeyHandler.java in device/oppo/common/keyhandler
  */
 
-#define KEY_MODE_TOTAL_SILENCE  600
-#define KEY_MODE_ALARMS_ONLY    601
-#define KEY_MODE_PRIORITY_ONLY  602
-#define KEY_MODE_NONE           603
+#define KEY_SLIDER_TOP      601
+#define KEY_SLIDER_MIDDLE   602
+#define KEY_SLIDER_BOTTOM   603
 
 static int current_mode = MODE_UNKNOWN;
-
-/*
- * Default mapping between OP's sti-state switch and OPPO's key codes
- * see Constants.java in device/oppo/common/configpanel
- */
-
-static int keyCode_slider_top = KEY_MODE_ALARMS_ONLY;
-static int keyCode_slider_middle = KEY_MODE_PRIORITY_ONLY;
-static int keyCode_slider_bottom = KEY_MODE_NONE;
 
 struct switch_dev_data {
 	int irq_key1;
@@ -108,13 +97,13 @@ static void switch_dev_work(struct work_struct *work)
 
 	if (key1 == 0) {
 		mode = MODE_MUTE;
-		keyCode = keyCode_slider_top;
+		keyCode = KEY_SLIDER_TOP;
 	} else if (key2 == 0) {
 		mode = MODE_DO_NOT_DISTURB;
-		keyCode = keyCode_slider_middle;
+		keyCode = KEY_SLIDER_MIDDLE;
 	} else if (key3 == 0) {
 		mode = MODE_NORMAL;
-		keyCode = keyCode_slider_bottom;
+		keyCode = KEY_SLIDER_BOTTOM;
 	}
 
 	if (current_mode != mode && mode != MODE_UNKNOWN) {
@@ -169,47 +158,6 @@ switch_dev_get_devtree_pdata(struct device *dev)
 }
 #endif
 
-#define KEYCODE_FOPS(WHICH)\
-	static int keyCode_##WHICH##_show(struct seq_file *seq, void *offset)\
-	{\
-		seq_printf(seq, "%d\n", keyCode_slider_##WHICH);\
-		return 0;\
-	}\
-	static ssize_t keyCode_##WHICH##_write(struct file *file,\
-			const char __user *page, size_t t, loff_t *lo)\
-	{\
-		int data;\
-		char buf[10];\
-		if (copy_from_user(buf, page, t)) {\
-			dev_err(switch_data->dev, "read proc input error.\n");\
-			return t;\
-		}\
-		if (sscanf(buf, "%d", &data) != 1)\
-			return t;\
-		if (data < 600 || data > 603)\
-			return t;\
-		keyCode_slider_##WHICH = data;\
-		if (current_mode == 1)\
-			send_input(keyCode_slider_##WHICH);\
-		return t;\
-	}\
-	static int keyCode_##WHICH##_open(struct inode *inode, struct file *file)\
-	{\
-		return single_open(file, keyCode_##WHICH##_show, inode->i_private);\
-	}\
-	const struct file_operations proc_keyCode_##WHICH = {\
-		.owner		= THIS_MODULE,\
-		.open		= keyCode_##WHICH##_open,\
-		.read		= seq_read,\
-		.write		= keyCode_##WHICH##_write,\
-		.llseek 	= seq_lseek,\
-		.release	= single_release,\
-	};
-
-KEYCODE_FOPS(top);
-KEYCODE_FOPS(middle);
-KEYCODE_FOPS(bottom);
-
 #define REGISTER_IRQ_FOR(KEY)\
 	switch_data->irq_##KEY = gpio_to_irq(switch_data->KEY##_gpio);\
 	if (switch_data->irq_##KEY <= 0) {\
@@ -228,7 +176,7 @@ KEYCODE_FOPS(bottom);
 			goto err_set_gpio_input;\
 		}\
 		error = request_irq(switch_data->irq_##KEY, switch_dev_interrupt,\
-			IRQF_TRIGGER_FALLING|IRQF_TRIGGER_RISING, "tristate_" #KEY, switch_data);\
+			IRQF_TRIGGER_FALLING, "tristate_" #KEY, switch_data);\
 		if (error) {\
 			dev_err(dev, "%s: request_irq, err=%d\n", __func__, error);\
 			switch_data->irq_##KEY = -EINVAL;\
@@ -239,7 +187,6 @@ KEYCODE_FOPS(bottom);
 static int tristate_dev_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct proc_dir_entry *procdir;
 	int error = 0;
 
 	switch_data = kzalloc(sizeof(struct switch_dev_data), GFP_KERNEL);
@@ -254,10 +201,9 @@ static int tristate_dev_probe(struct platform_device *pdev)
 
 	set_bit(EV_KEY, switch_data->input->evbit);
 
-	set_bit(KEY_MODE_TOTAL_SILENCE, switch_data->input->keybit);
-	set_bit(KEY_MODE_ALARMS_ONLY, switch_data->input->keybit);
-	set_bit(KEY_MODE_PRIORITY_ONLY, switch_data->input->keybit);
-	set_bit(KEY_MODE_NONE, switch_data->input->keybit);
+	set_bit(KEY_SLIDER_TOP, switch_data->input->keybit);
+	set_bit(KEY_SLIDER_MIDDLE, switch_data->input->keybit);
+	set_bit(KEY_SLIDER_BOTTOM, switch_data->input->keybit);
 
 	input_set_drvdata(switch_data->input, switch_data);
 
@@ -318,19 +264,6 @@ static int tristate_dev_probe(struct platform_device *pdev)
 		dev_err(dev, "Failed to register switch dev\n");
 		goto err_request_gpio;
 	}
-
-	// init proc fs
-
-	procdir = proc_mkdir("tri-state-key", NULL);
-
-	proc_create_data("keyCode_top", 0666, procdir,
-		&proc_keyCode_top, NULL);
-
-	proc_create_data("keyCode_middle", 0666, procdir,
-		&proc_keyCode_middle, NULL);
-
-	proc_create_data("keyCode_bottom", 0666, procdir,
-		&proc_keyCode_bottom, NULL);
 
 	return 0;
 
