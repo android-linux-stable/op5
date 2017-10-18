@@ -778,7 +778,7 @@ static void adapter_update_work_func(struct work_struct *work)
 	pr_info("%s begin\n", __func__);
 	opchg_set_data_active(chip);
 	oem_report_power_key(PON_KPDPWR);
-	pm_qos_update_request(&big_cpu_update_freq, MAX_CPUFREQ);
+	//pm_qos_update_request(&big_cpu_update_freq, MAX_CPUFREQ);
 	msleep(1000);
 	for (i = 0; i < 3; i++) {
 		update_result =
@@ -810,7 +810,7 @@ static void adapter_update_work_func(struct work_struct *work)
 		msleep(2000);
 		chip->adapter_update_report = ADAPTER_FW_UPDATE_SUCCESS;
 	}
-	pm_qos_update_request(&big_cpu_update_freq, MIN_CPUFREQ);
+	//pm_qos_update_request(&big_cpu_update_freq, MIN_CPUFREQ);
 	pr_info("%s end update_result:%d\n",
 		__func__, update_result);
 	wake_unlock(&chip->fastchg_wake_lock);
@@ -1224,8 +1224,8 @@ static int dash_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	INIT_DELAYED_WORK(&di->update_firmware, dashchg_fw_update);
 	INIT_DELAYED_WORK(&di->adapter_update_work, adapter_update_work_func);
 
-	pm_qos_add_request(&big_cpu_update_freq,
-		PM_QOS_C1_CPUFREQ_MIN, MIN_CPUFREQ);
+	//pm_qos_add_request(&big_cpu_update_freq,
+	//	PM_QOS_C1_CPUFREQ_MIN, MIN_CPUFREQ);
 
 	init_timer(&di->watchdog);
 	di->watchdog.data = (unsigned long)di;
