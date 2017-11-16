@@ -182,3 +182,6 @@ obj-$(CONFIG_BIF)		+= bif/
 
 obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 obj-$(CONFIG_ESOC)              += esoc/
+
+#porting for support oem trace
+obj-$(CONFIG_OEM_DEBUG_SUPORT)  += oneplus/

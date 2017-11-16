@@ -212,4 +212,6 @@ source "drivers/bif/Kconfig"
 
 source "drivers/sensors/Kconfig"
 
+#porting for support oem trace,2015/10/27
+source "drivers/oneplus/Kconfig"
 endmenu
