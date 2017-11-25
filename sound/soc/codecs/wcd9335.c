@@ -197,6 +197,8 @@ MODULE_PARM_DESC(sido_buck_svs_voltage,
 #else
 #define TASHA_TX_UNMUTE_DELAY_MS	40
 #endif
+#define HEADSET_TYPE_NAME_LEN    64
+
 
 static int tx_unmute_delay = TASHA_TX_UNMUTE_DELAY_MS;
 module_param(tx_unmute_delay, int,
@@ -925,10 +927,9 @@ static ssize_t wcd9xxx_print_name(struct switch_dev *sdev, char *buf)
             } else {
                 return sprintf(buf, "Headset\n");
             }
-
-		case HS_WITHOUT_MIC:
-			return sprintf(buf, "Handset\n");
-
+                case HS_WITHOUT_MIC:
+                        return snprintf(buf, HEADSET_TYPE_NAME_LEN,
+                                            "Handset\n");
 	}
 	return -EINVAL;
 }
