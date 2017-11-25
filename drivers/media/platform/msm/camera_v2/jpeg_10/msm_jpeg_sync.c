@@ -784,9 +784,7 @@ int __msm_jpeg_release(struct msm_jpeg_device *pgmn_dev)
 		return -EINVAL;
 	}
 	pgmn_dev->open_count--;
-#ifndef CONFIG_VENDOR_ONEPLUS
 	mutex_unlock(&pgmn_dev->lock);
-#endif
 
 	msm_jpeg_core_release(pgmn_dev);
 	msm_jpeg_q_cleanup(&pgmn_dev->evt_q);
@@ -801,10 +799,6 @@ int __msm_jpeg_release(struct msm_jpeg_device *pgmn_dev)
 
 	/* release the platform resources */
 	msm_jpeg_platform_release(pgmn_dev);
-
-#ifdef CONFIG_VENDOR_ONEPLUS
-	mutex_unlock(&pgmn_dev->lock);
-#endif
 
 	JPEG_DBG("%s:%d]\n", __func__, __LINE__);
 
@@ -1320,10 +1314,8 @@ long __msm_jpeg_compat_ioctl(struct msm_jpeg_device *pgmn_dev,
 		break;
 
 	case MSM_JPEG_IOCTL_INPUT_BUF_ENQUEUE:
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_input_buf_enqueue(pgmn_dev,
 			(void __user *) arg);
-		mutex_unlock(&pgmn_dev->lock);
 		break;
 
 	case MSM_JPEG_IOCTL_INPUT_BUF_ENQUEUE32:
@@ -1331,24 +1323,18 @@ long __msm_jpeg_compat_ioctl(struct msm_jpeg_device *pgmn_dev,
 		if (rc < 0)
 			break;
 		set_fs(KERNEL_DS);
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_input_buf_enqueue(pgmn_dev,
 			(void __user *) &jpeg_buf);
-		mutex_unlock(&pgmn_dev->lock);
 		set_fs(old_fs);
 		break;
 
 	case MSM_JPEG_IOCTL_INPUT_GET:
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_input_get(pgmn_dev, (void __user *) arg);
-		mutex_unlock(&pgmn_dev->lock);
 		break;
 
 	case MSM_JPEG_IOCTL_INPUT_GET32:
 		set_fs(KERNEL_DS);
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_input_get(pgmn_dev, (void __user *) &jpeg_buf);
-		mutex_unlock(&pgmn_dev->lock);
 		set_fs(old_fs);
 		if (rc < 0)
 			break;
@@ -1361,10 +1347,8 @@ long __msm_jpeg_compat_ioctl(struct msm_jpeg_device *pgmn_dev,
 		break;
 
 	case MSM_JPEG_IOCTL_OUTPUT_BUF_ENQUEUE:
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_output_buf_enqueue(pgmn_dev,
 			(void __user *) arg);
-		mutex_unlock(&pgmn_dev->lock);
 		break;
 
 	case MSM_JPEG_IOCTL_OUTPUT_BUF_ENQUEUE32:
@@ -1372,24 +1356,18 @@ long __msm_jpeg_compat_ioctl(struct msm_jpeg_device *pgmn_dev,
 		if (rc < 0)
 			break;
 		set_fs(KERNEL_DS);
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_output_buf_enqueue(pgmn_dev,
 			(void __user *) &jpeg_buf);
-		mutex_unlock(&pgmn_dev->lock);
 		set_fs(old_fs);
 		break;
 
 	case MSM_JPEG_IOCTL_OUTPUT_GET:
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_output_get(pgmn_dev, (void __user *) arg);
-		mutex_unlock(&pgmn_dev->lock);
 		break;
 
 	case MSM_JPEG_IOCTL_OUTPUT_GET32:
 		set_fs(KERNEL_DS);
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_output_get(pgmn_dev, (void __user *) &jpeg_buf);
-		mutex_unlock(&pgmn_dev->lock);
 		set_fs(old_fs);
 		if (rc < 0)
 			break;
@@ -1487,16 +1465,12 @@ long __msm_jpeg_ioctl(struct msm_jpeg_device *pgmn_dev,
 		break;
 
 	case MSM_JPEG_IOCTL_INPUT_BUF_ENQUEUE:
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_input_buf_enqueue(pgmn_dev,
 			(void __user *) arg);
-		mutex_unlock(&pgmn_dev->lock);
 		break;
 
 	case MSM_JPEG_IOCTL_INPUT_GET:
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_input_get(pgmn_dev, (void __user *) arg);
-		mutex_unlock(&pgmn_dev->lock);
 		break;
 
 	case MSM_JPEG_IOCTL_INPUT_GET_UNBLOCK:
@@ -1504,16 +1478,12 @@ long __msm_jpeg_ioctl(struct msm_jpeg_device *pgmn_dev,
 		break;
 
 	case MSM_JPEG_IOCTL_OUTPUT_BUF_ENQUEUE:
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_output_buf_enqueue(pgmn_dev,
 			(void __user *) arg);
-		mutex_unlock(&pgmn_dev->lock);
 		break;
 
 	case MSM_JPEG_IOCTL_OUTPUT_GET:
-		mutex_lock(&pgmn_dev->lock);
 		rc = msm_jpeg_output_get(pgmn_dev, (void __user *) arg);
-		mutex_unlock(&pgmn_dev->lock);
 		break;
 
 	case MSM_JPEG_IOCTL_OUTPUT_GET_UNBLOCK:
