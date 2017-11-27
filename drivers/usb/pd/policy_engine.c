@@ -615,6 +615,10 @@ static void kick_sm(struct usbpd *pd, int ms)
 static void phy_sig_received(struct usbpd *pd, enum pd_sig_type sig)
 {
 	union power_supply_propval val = {1};
+#ifdef CONFIG_VENDOR_ONEPLUS
+	usbpd_info(&pd->dev, "%s return by oem\n", __func__);
+	return;
+#endif
 
 	if (sig != HARD_RESET_SIG) {
 		usbpd_err(&pd->dev, "invalid signal (%d) received\n", sig);
@@ -760,7 +764,9 @@ static void usbpd_set_state(struct usbpd *pd, enum usbpd_state next_state)
 			 */
 		}
 
-		dual_role_instance_changed(pd->dual_role);
+#ifndef CONFIG_VENDOR_ONEPLUS
+                dual_role_instance_changed(pd->dual_role);
+#endif
 
 		/* Set CC back to DRP toggle for the next disconnect */
 		val.intval = POWER_SUPPLY_TYPEC_PR_DUAL;
@@ -921,12 +927,21 @@ static void usbpd_set_state(struct usbpd *pd, enum usbpd_state next_state)
 			if (pd->psy_type == POWER_SUPPLY_TYPE_USB ||
 				pd->psy_type == POWER_SUPPLY_TYPE_USB_CDP ||
 				pd->psy_type == POWER_SUPPLY_TYPE_USB_FLOAT ||
-				usb_compliance_mode)
+#ifdef CONFIG_VENDOR_ONEPLUS
+				usb_compliance_mode){
+				usbpd_err(&pd->dev, "sink start:pd start peripheral\n");
 				start_usb_peripheral(pd);
+			}
+#else
+                                usb_compliance_mode)
+                                start_usb_peripheral(pd);
+#endif
 		}
 
-		dual_role_instance_changed(pd->dual_role);
 
+#ifndef CONFIG_VENDOR_ONEPLUS
+                dual_role_instance_changed(pd->dual_role);
+#endif
 		ret = power_supply_get_property(pd->usb_psy,
 				POWER_SUPPLY_PROP_PD_ALLOWED, &val);
 		if (ret) {
@@ -1022,6 +1037,9 @@ static void usbpd_set_state(struct usbpd *pd, enum usbpd_state next_state)
 
 	case PE_SNK_TRANSITION_TO_DEFAULT:
 		if (pd->current_dr != DR_UFP) {
+#ifdef CONFIG_VENDOR_ONEPLUS
+			usbpd_err(&pd->dev, "to default:pd start peripheral\n");
+#endif
 			stop_usb_host(pd);
 			start_usb_peripheral(pd);
 			pd->current_dr = DR_UFP;
@@ -1721,8 +1739,12 @@ static void usbpd_sm(struct work_struct *w)
 		break;
 
 	case PE_SRC_SEND_CAPABILITIES:
-		ret = pd_send_msg(pd, MSG_SOURCE_CAPABILITIES, default_src_caps,
-				ARRAY_SIZE(default_src_caps), SOP_MSG);
+#ifdef CONFIG_VENDOR_ONEPLUS
+		ret = pd_send_msg(pd, MSG_PS_RDY, NULL, 0, SOP_MSG);
+#else
+                ret = pd_send_msg(pd, MSG_SOURCE_CAPABILITIES, default_src_caps,
+                                ARRAY_SIZE(default_src_caps), SOP_MSG);
+#endif
 		if (ret) {
 			pd->caps_count++;
 
@@ -1734,37 +1756,43 @@ static void usbpd_sm(struct work_struct *w)
 				break;
 			}
 #else
-			if (pd->caps_count == 10 && pd->current_dr == DR_DFP) {
-				/* Likely not PD-capable, start host now */
-				start_usb_host(pd, true);
-			} else if (pd->caps_count >= PD_CAPS_COUNT) {
-				usbpd_dbg(&pd->dev, "Src CapsCounter exceeded, disabling PD\n");
-				usbpd_set_state(pd, PE_SRC_DISABLED);
-
-				val.intval = 0;
-				power_supply_set_property(pd->usb_psy,
-						POWER_SUPPLY_PROP_PD_ACTIVE,
-						&val);
-				break;
-			}
+                        if (pd->caps_count == 10 && pd->current_dr == DR_DFP) {
+                                /* Likely not PD-capable, start host now */
+                                start_usb_host(pd, true);
+                        } else if (pd->caps_count >= PD_CAPS_COUNT) {
+                                usbpd_dbg(&pd->dev, "Src CapsCounter exceeded, disabling PD\n");
+                                usbpd_set_state(pd, PE_SRC_DISABLED);
+ 
+                                val.intval = 0;
+                                power_supply_set_property(pd->usb_psy,
+                                                POWER_SUPPLY_PROP_PD_ACTIVE,
+                                                &val);
+                                break;
+                        }
 #endif
 
 			kick_sm(pd, SRC_CAP_TIME);
 			break;
 		}
 
-		/* transmit was successful if GoodCRC was received */
-		pd->caps_count = 0;
-		pd->hard_reset_count = 0;
-		pd->pd_connected = true; /* we know peer is PD capable */
-
-		/* wait for REQUEST */
-		pd->current_state = PE_SRC_SEND_CAPABILITIES_WAIT;
-		kick_sm(pd, SENDER_RESPONSE_TIME);
-
-		val.intval = 1;
-		power_supply_set_property(pd->usb_psy,
-				POWER_SUPPLY_PROP_PD_ACTIVE, &val);
+#ifdef CONFIG_VENDOR_ONEPLUS
+		usbpd_info(&pd->dev, "Start host snd msg ok\n");
+		if (pd->current_dr == DR_DFP)
+			start_usb_host(pd, true);
+#else
+                /* transmit was successful if GoodCRC was received */
+                pd->caps_count = 0;
+                pd->hard_reset_count = 0;
+                pd->pd_connected = true; /* we know peer is PD capable */
+ 
+                /* wait for REQUEST */
+                pd->current_state = PE_SRC_SEND_CAPABILITIES_WAIT;
+                kick_sm(pd, SENDER_RESPONSE_TIME);
+ 
+                val.intval = 1;
+                power_supply_set_property(pd->usb_psy,
+                                POWER_SUPPLY_PROP_PD_ACTIVE, &val);
+#endif
 		break;
 
 	case PE_SRC_SEND_CAPABILITIES_WAIT:
@@ -2174,6 +2202,9 @@ static void usbpd_sm(struct work_struct *w)
 		break;
 
 	case PE_SNK_TRANSITION_TO_DEFAULT:
+#ifdef CONFIG_VENDOR_ONEPLUS
+		usbpd_err(&pd->dev, "default: sink startup\n");
+#endif
 		usbpd_set_state(pd, PE_SNK_STARTUP);
 		break;
 
@@ -2429,11 +2460,7 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 	pd->vbus_present = val.intval;
 
 	ret = power_supply_get_property(pd->usb_psy,
-#ifdef CONFIG_VENDOR_ONEPLUS
-			POWER_SUPPLY_PROP_TYPE, &val);
-#else
 			POWER_SUPPLY_PROP_REAL_TYPE, &val);
-#endif
 	if (ret) {
 		usbpd_err(&pd->dev, "Unable to read USB TYPE: %d\n", ret);
 		return ret;
@@ -2464,15 +2491,15 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 		(typec_mode == POWER_SUPPLY_TYPEC_SOURCE_MEDIUM) ||
 		(typec_mode == POWER_SUPPLY_TYPEC_SOURCE_HIGH)) {
 		if (pd->psy_type == POWER_SUPPLY_TYPE_UNKNOWN) {
-			usbpd_err(&pd->dev, "typec_mode:%d, psy_type:%d\n", typec_mode, pd->psy_type);
+			usbpd_err(&pd->dev, "typec_mode:%d, psy_type:%d\n",
+				typec_mode, pd->psy_type);
 			return 0;
 		}
 	}
 #endif
-
 	pd->typec_mode = typec_mode;
 
-	usbpd_dbg(&pd->dev, "typec mode:%d present:%d type:%d orientation:%d\n",
+	usbpd_err(&pd->dev, "typec mode:%d present:%d type:%d orientation:%d\n",
 			typec_mode, pd->vbus_present, pd->psy_type,
 			usbpd_get_plug_orientation(pd));
 
@@ -2600,11 +2627,7 @@ static int usbpd_dr_set_property(struct dual_role_phy_instance *dual_role,
 {
 	struct usbpd *pd = dual_role_get_drvdata(dual_role);
 	bool do_swap = false;
-#ifdef CONFIG_VENDOR_ONEPLUS
-	int wait_count = 20;
-#else
 	int wait_count = 5;
-#endif
 
 	if (!pd)
 		return -ENODEV;

@@ -206,6 +206,7 @@ static struct usb_descriptor_header *ccid_hs_descs[] = {
 	NULL,
 };
 
+#ifndef CONFIG_VENDOR_ONEPLUS
 /* Super speed support: */
 static struct usb_endpoint_descriptor ccid_ss_notify_desc  = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
@@ -270,6 +271,7 @@ static struct usb_descriptor_header *ccid_ss_descs[] = {
 	(struct usb_descriptor_header *) &ccid_ss_out_comp_desc,
 	NULL,
 };
+#endif
 
 static inline struct f_ccid *func_to_ccid(struct usb_function *f)
 {
@@ -568,7 +570,13 @@ free_notify:
 static void ccid_function_unbind(struct usb_configuration *c,
 					struct usb_function *f)
 {
+#ifdef CONFIG_VENDOR_ONEPLUS
+	if (gadget_is_dualspeed(c->cdev->gadget))
+ 		usb_free_descriptors(f->hs_descriptors);
+ 	usb_free_descriptors(f->fs_descriptors);
+#else
 	usb_free_all_descriptors(f);
+#endif
 }
 
 static int ccid_function_bind(struct usb_configuration *c,
@@ -613,6 +621,7 @@ static int ccid_function_bind(struct usb_configuration *c,
 	ccid_dev->out = ep;
 	ep->driver_data = cdev;
 
+#ifndef CONFIG_VENDOR_ONEPLUS
 	/*
 	 * support all relevant hardware speeds... we expect that when
 	 * hardware is dual speed, all bulk-capable endpoints work at
@@ -632,8 +641,27 @@ static int ccid_function_bind(struct usb_configuration *c,
 	ret = usb_assign_descriptors(f, ccid_fs_descs, ccid_hs_descs,
 						ccid_ss_descs);
 	if (ret)
+#else
+	f->fs_descriptors = usb_copy_descriptors(ccid_fs_descs);
+	if (!f->fs_descriptors)
+#endif
 		goto ep_auto_out_fail;
 
+#ifdef CONFIG_VENDOR_ONEPLUS
+	if (gadget_is_dualspeed(cdev->gadget)) {
+		ccid_hs_in_desc.bEndpointAddress =
+				ccid_fs_in_desc.bEndpointAddress;
+		ccid_hs_out_desc.bEndpointAddress =
+				ccid_fs_out_desc.bEndpointAddress;
+		ccid_hs_notify_desc.bEndpointAddress =
+				ccid_fs_notify_desc.bEndpointAddress;
+
+		/* copy descriptors, and track endpoint copies */
+		f->hs_descriptors = usb_copy_descriptors(ccid_hs_descs);
+		if (!f->hs_descriptors)
+			goto ep_auto_out_fail;
+	}
+#endif
 	pr_debug("%s: CCID %s Speed, IN:%s OUT:%s\n", __func__,
 			gadget_is_dualspeed(cdev->gadget) ? "dual" : "full",
 			ccid_dev->in->name, ccid_dev->out->name);
@@ -1037,7 +1065,9 @@ static int ccid_bind_config(struct f_ccid *ccid_dev)
 	ccid_dev->function.name = FUNCTION_NAME;
 	ccid_dev->function.fs_descriptors = ccid_fs_descs;
 	ccid_dev->function.hs_descriptors = ccid_hs_descs;
+#ifndef CONFIG_VENDOR_ONEPLUS
 	ccid_dev->function.ss_descriptors = ccid_ss_descs;
+#endif
 	ccid_dev->function.bind = ccid_function_bind;
 	ccid_dev->function.unbind = ccid_function_unbind;
 	ccid_dev->function.set_alt = ccid_function_set_alt;
