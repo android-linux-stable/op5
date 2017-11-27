@@ -46,10 +46,16 @@
 			&& (value) <= (right)))
 
 /* Awake votable reasons */
-#define SRAM_READ	"fg_sram_read"
-#define SRAM_WRITE	"fg_sram_write"
-#define PROFILE_LOAD	"fg_profile_load"
-#define DELTA_SOC	"fg_delta_soc"
+#define SRAM_READ		"fg_sram_read"
+#define SRAM_WRITE		"fg_sram_write"
+#define PROFILE_LOAD		"fg_profile_load"
+#define TTF_PRIMING		"fg_ttf_priming"
+
+/* Delta BSOC irq votable reasons */
+#define DELTA_BSOC_IRQ_VOTER	"fg_delta_bsoc_irq"
+
+/* Battery missing irq votable reasons */
+#define BATT_MISS_IRQ_VOTER	"fg_batt_miss_irq"
 
 #define DEBUG_PRINT_BUFFER_SIZE		64
 /* 3 byte address + 1 space character */
@@ -74,6 +80,8 @@
 #define SLOPE_LIMIT_COEFF_MAX		31
 
 #define BATT_THERM_NUM_COEFFS		3
+
+#define MAX_CC_STEPS			20
 
 /* Debug flag definitions */
 enum fg_debug_flag {
@@ -216,6 +224,17 @@ enum slope_limit_status {
 	SLOPE_LIMIT_NUM_COEFFS,
 };
 
+enum esr_timer_config {
+	TIMER_RETRY = 0,
+	TIMER_MAX,
+	NUM_ESR_TIMERS,
+};
+
+enum ttf_mode {
+	TTF_MODE_NORMAL = 0,
+	TTF_MODE_QNOVO,
+};
+
 /* DT parameters for FG device */
 struct fg_dt_props {
 	bool	force_load_profile;
@@ -231,9 +250,9 @@ struct fg_dt_props {
 	int	recharge_soc_thr;
 	int	recharge_volt_thr_mv;
 	int	rsense_sel;
-	int	esr_timer_charging;
-	int	esr_timer_awake;
-	int	esr_timer_asleep;
+	int	esr_timer_charging[NUM_ESR_TIMERS];
+	int	esr_timer_awake[NUM_ESR_TIMERS];
+	int	esr_timer_asleep[NUM_ESR_TIMERS];
 	int	rconn_mohms;
 	int	esr_clamp_mohms;
 	int	cl_start_soc;
@@ -297,14 +316,29 @@ struct fg_irq_info {
 };
 
 struct fg_circ_buf {
-	int	arr[20];
+	int	arr[10];
 	int	size;
 	int	head;
+};
+
+struct fg_cc_step_data {
+	int arr[MAX_CC_STEPS];
+	int sel;
 };
 
 struct fg_pt {
 	s32 x;
 	s32 y;
+};
+
+struct ttf {
+	struct fg_circ_buf	ibatt;
+	struct fg_circ_buf	vbatt;
+	struct fg_cc_step_data	cc_step;
+	struct mutex		lock;
+	int			mode;
+	int			last_ttf;
+	s64			last_ms;
 };
 
 static const struct fg_pt fg_ln_table[] = {
@@ -346,11 +380,14 @@ struct fg_chip {
 	struct power_supply	*usb_psy;
 	struct power_supply	*dc_psy;
 	struct power_supply	*parallel_psy;
+	struct power_supply	*pc_port_psy;
 	struct iio_channel	*batt_id_chan;
 	struct iio_channel	*die_temp_chan;
 	struct fg_memif		*sram;
 	struct fg_irq_info	*irqs;
 	struct votable		*awake_votable;
+	struct votable		*delta_bsoc_irq_en_votable;
+	struct votable		*batt_miss_irq_en_votable;
 	struct fg_sram_param	*sp;
 	struct fg_alg_flag	*alg_flags;
 	int			*debug_mask;
@@ -360,9 +397,9 @@ struct fg_chip {
 	struct fg_cyc_ctr_data	cyc_ctr;
 	struct notifier_block	nb;
 	struct fg_cap_learning  cl;
+	struct ttf		ttf;
 	struct mutex		bus_lock;
 	struct mutex		sram_rw_lock;
-	struct mutex		batt_avg_lock;
 	struct mutex		charge_full_lock;
 	u32			batt_soc_base;
 	u32			batt_info_base;
@@ -375,12 +412,15 @@ struct fg_chip {
 	int			prev_charge_status;
 	int			charge_done;
 	int			charge_type;
+	int			online_status;
 	int			last_soc;
 	int			last_batt_temp;
 	int			health;
 	int			maint_soc;
 	int			delta_soc;
 	int			last_msoc;
+	int			last_recharge_volt_mv;
+	int			esr_timer_charging_default[NUM_ESR_TIMERS];
 	enum slope_limit_status	slope_limit_sts;
 	bool			profile_available;
 	bool			profile_loaded;
@@ -394,18 +434,14 @@ struct fg_chip {
 	bool			esr_fcc_ctrl_en;
 	bool			soc_reporting_ready;
 	bool			esr_flt_cold_temp_en;
-	bool			bsoc_delta_irq_en;
 	bool			slope_limit_en;
 	bool			use_ima_single_mode;
 	struct completion	soc_update;
 	struct completion	soc_ready;
 	struct delayed_work	profile_load_work;
 	struct work_struct	status_change_work;
-	struct work_struct	cycle_count_work;
-	struct delayed_work	batt_avg_work;
+	struct delayed_work	ttf_work;
 	struct delayed_work	sram_dump_work;
-	struct fg_circ_buf	ibatt_circ_buf;
-	struct fg_circ_buf	vbatt_circ_buf;
 };
 
 /* Debugfs data structures are below */
@@ -459,8 +495,10 @@ extern void dump_sram(u8 *buf, int addr, int len);
 extern int64_t twos_compliment_extend(int64_t val, int s_bit_pos);
 extern s64 fg_float_decode(u16 val);
 extern bool is_input_present(struct fg_chip *chip);
+extern bool is_qnovo_en(struct fg_chip *chip);
 extern void fg_circ_buf_add(struct fg_circ_buf *, int);
 extern void fg_circ_buf_clr(struct fg_circ_buf *);
 extern int fg_circ_buf_avg(struct fg_circ_buf *, int *);
+extern int fg_circ_buf_median(struct fg_circ_buf *, int *);
 extern int fg_lerp(const struct fg_pt *, size_t, s32, s32 *);
 #endif

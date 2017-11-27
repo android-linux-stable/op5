@@ -288,7 +288,7 @@ static void soc_mitigate(struct work_struct *work)
 	union power_supply_propval ret = {0,};
 	int battery_percentage;
 	enum bcl_threshold_state prev_soc_state;
-	//taokai@bsp add for detecting usb status 2016.04.16
+	/*taokai@bsp add for detecting usb status 2016.04.16*/
 	static struct power_supply *usb_psy;
 	int usb_state;
 	bool is_usb_present;
@@ -301,7 +301,7 @@ static void soc_mitigate(struct work_struct *work)
 		if (usb_state == 0)
 			is_usb_present = ret.intval;
 	}
-	//taokai@bsp add end 2016.04.16
+	/*taokai@bsp add end 2016.04.16*/
 
 	if (!batt_psy)
 		batt_psy = power_supply_get_by_name("battery");
@@ -314,14 +314,15 @@ static void soc_mitigate(struct work_struct *work)
 		pr_debug("Battery SOC reported:%d", battery_soc_val);
 		trace_bcl_sw_mitigation("SoC reported", battery_soc_val);
 		prev_soc_state = bcl_soc_state;
-		//taokai@bsp add for deceding bcl_soc_state by usb status  2016.04.16
+		/*taokai@bsp add for deceding */
+		/*bcl_soc_state by usb status  2016.04.16*/
 		pr_debug("is_usb_present:%d", is_usb_present);
-		if(is_usb_present)
+		if (is_usb_present)
 			bcl_soc_state = BCL_HIGH_THRESHOLD;
 		else
 			bcl_soc_state = (battery_soc_val <= soc_low_threshold) ?
 					BCL_LOW_THRESHOLD : BCL_HIGH_THRESHOLD;
-		//taokai@bsp add end 2016.04.16
+		/*taokai@bsp add end 2016.04.16*/
 		if (bcl_soc_state == prev_soc_state)
 			return;
 		trace_bcl_sw_mitigation_event(
