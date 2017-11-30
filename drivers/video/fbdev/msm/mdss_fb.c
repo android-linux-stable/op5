@@ -55,6 +55,9 @@
 #include "mdss_debug.h"
 #include "mdss_smmu.h"
 #include "mdss_mdp.h"
+#ifdef CONFIG_VENDOR_ONEPLUS
+#include "mdss_dsi.h"
+#endif
 
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
@@ -673,7 +676,9 @@ static ssize_t mdss_fb_force_panel_dead(struct device *dev,
 		pr_err("no panel connected!\n");
 		return len;
 	}
-
+#ifdef CONFIG_VENDOR_ONEPLUS
+        mdss_fb_report_panel_dead(mfd);
+#endif
 	if (kstrtouint(buf, 0, &pdata->panel_info.panel_force_dead))
 		pr_err("kstrtouint buf error!\n");
 
@@ -839,6 +844,7 @@ static ssize_t mdss_fb_get_dfps_mode(struct device *dev,
 	return ret;
 }
 
+#ifdef CONFIG_VENDOR_ONEPLUS
 static ssize_t mdss_fb_get_ACL(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -895,6 +901,7 @@ static ssize_t mdss_fb_get_hbm_mode(struct device *dev,
 	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_HBM_MODE,
 			NULL);
 	ret = scnprintf(buf, PAGE_SIZE, "%d\n", level);
+
 	return ret;
 }
 
@@ -934,7 +941,8 @@ static ssize_t mdss_fb_get_srgb_mode(struct device *dev,
 
 	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_SRGB_MODE,
 			NULL);
-	ret=scnprintf(buf, PAGE_SIZE, "%d\n", level);
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", level);
+
 	return ret;
 }
 
@@ -974,7 +982,8 @@ static ssize_t mdss_fb_get_adobe_rgb_mode(struct device *dev,
 
 	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_ADOBE_RGB_MODE,
 			NULL);
-	ret=scnprintf(buf, PAGE_SIZE, "%d\n", level);
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", level);
+
 	return ret;
 }
 
@@ -1013,7 +1022,8 @@ static ssize_t mdss_fb_get_dci_p3_mode(struct device *dev,
 
 	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_DCI_P3_MODE,
 			NULL);
-	ret=scnprintf(buf, PAGE_SIZE, "%d\n", level);
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", level);
+
 	return ret;
 }
 
@@ -1041,6 +1051,43 @@ static ssize_t mdss_fb_set_dci_p3_mode(struct device *dev,
 static DEVICE_ATTR(DCI_P3, S_IRUGO | S_IWUSR,
 	mdss_fb_get_dci_p3_mode, mdss_fb_set_dci_p3_mode);
 //#endif
+
+static ssize_t mdss_fb_get_panel_serial_number(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	struct mdss_panel_data *pdata;
+	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+	int ret = 0;
+
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+	if (!pdata) {
+		pr_err("panel_serial_panel get pdata fail!\n");
+		return 0;
+	}
+	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+	mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_SERIAL_NUM,
+			NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "%04d/%02d/%02d %02d:%02d\n",
+	                                                    ctrl->panel_year,
+	                                                    ctrl->panel_mon,
+	                                                    ctrl->panel_day,
+	                                                    ctrl->panel_hour,
+                                                        ctrl->panel_min);
+
+    pr_err("panel year = %d, panel_mon = %d, panel_day = %d, panel_hour = %d, panel_min = %d\n",
+                    ctrl->panel_year, ctrl->panel_mon, ctrl->panel_day,
+                        ctrl->panel_hour, ctrl->panel_min);
+
+	return ret;
+}
+
+static DEVICE_ATTR(panel_serial_number, S_IRUGO | S_IWUSR,
+	mdss_fb_get_panel_serial_number, NULL);
+//#endif
+
 static ssize_t mdss_fb_get_night_mode(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1051,7 +1098,8 @@ static ssize_t mdss_fb_get_night_mode(struct device *dev,
 
 	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_NIGHT_MODE,
 			NULL);
-	ret=scnprintf(buf, PAGE_SIZE, "%d\n", level);
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", level);
+
 	return ret;
 }
 
@@ -1079,6 +1127,85 @@ static ssize_t mdss_fb_set_night_mode(struct device *dev,
 static DEVICE_ATTR(night_mode, S_IRUGO | S_IWUSR,
 	mdss_fb_get_night_mode, mdss_fb_set_night_mode);
 
+static ssize_t mdss_fb_get_oneplus_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int ret = 0;
+	int level = 0;
+
+	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_ONEPLUS_MODE,
+			NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", level);
+
+	return ret;
+}
+
+static ssize_t mdss_fb_set_oneplus_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int level = 0;
+
+	rc = kstrtoint(buf, 10, &level);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+    rc = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_SET_ONEPLUS_MODE,
+	    (void *)(unsigned long)level);
+	if (rc)
+		pr_err("Fail to set Oneplus mode: %d\n", level);
+
+	return count;
+}
+
+static DEVICE_ATTR(oneplus_mode, S_IRUGO | S_IWUSR,
+	mdss_fb_get_oneplus_mode, mdss_fb_set_oneplus_mode);
+
+static ssize_t mdss_fb_get_adaption_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int ret = 0;
+	int level = 0;
+
+	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_ADAPTION_MODE,
+			NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", level);
+
+	return ret;
+}
+
+static ssize_t mdss_fb_set_adaption_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int level = 0;
+
+	rc = kstrtoint(buf, 10, &level);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+    rc = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_SET_ADAPTION_MODE,
+	    (void *)(unsigned long)level);
+	if (rc)
+		pr_err("Fail to set Adaption mode: %d\n", level);
+
+	return count;
+}
+
+static DEVICE_ATTR(adaption_mode, S_IRUGO | S_IWUSR,
+	mdss_fb_get_adaption_mode, mdss_fb_set_adaption_mode);
+
+#endif
 static ssize_t mdss_fb_change_persist_mode(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t len)
 {
@@ -1187,6 +1314,7 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_panel_status.attr,
 	&dev_attr_msm_fb_dfps_mode.attr,
 	&dev_attr_measured_fps.attr,
+#ifdef CONFIG_VENDOR_ONEPLUS
 	&dev_attr_acl.attr,
 //#endif
 	&dev_attr_hbm.attr,
@@ -1198,7 +1326,11 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_DCI_P3.attr,
 //#endif
 	&dev_attr_night_mode.attr,
+	&dev_attr_adaption_mode.attr,
+	&dev_attr_oneplus_mode.attr,
 //#endif
+	&dev_attr_panel_serial_number.attr,
+#endif
 	&dev_attr_msm_fb_persist_mode.attr,
 	&dev_attr_idle_power_collapse.attr,
 	NULL,
@@ -2246,10 +2378,11 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 	}
 
 error:
+#ifdef CONFIG_VENDOR_ONEPLUS
     if (!mfd->panel_info->cont_splash_enabled){
        mfd->panel_post_on = 1;
     }
-//#endif
+#endif
 	return ret;
 }
 
@@ -3993,11 +4126,12 @@ static int __mdss_fb_perform_commit(struct msm_fb_data_type *mfd)
 	}
 
 skip_commit:
+#ifdef CONFIG_VENDOR_ONEPLUS
 	if (mfd->panel_post_on == 1){
 		mfd->panel_post_on = 0;
 		mdss_fb_send_panel_event(mfd, MDSS_EVENT_POST_PANEL_ON, NULL);
 	}
-//#endif
+#endif
 	if (!ret)
 		mdss_fb_update_backlight(mfd);
 

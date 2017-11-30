@@ -2091,7 +2091,11 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 	struct mdss_mdp_cmd_ctx *ctx;
 	struct mdss_panel_data *pdata;
 	unsigned long flags;
+#ifdef CONFIG_VENDOR_ONEPLUS
+        int rc = 0;
+#else
 	int rc = 0, te_irq;
+#endif
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->intf_ctx[MASTER_CTX];
 	if (!ctx) {
@@ -2146,6 +2150,7 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 				ctl->num, rc, ctx->pp_timeout_report_cnt,
 				atomic_read(&ctx->koff_cnt));
 
+#ifndef CONFIG_VENDOR_ONEPLUS
 		/* enable TE irq to check if it is coming from the panel */
 		te_irq = gpio_to_irq(pdata->panel_te_gpio);
 		enable_irq(te_irq);
@@ -2160,6 +2165,9 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 			MDSS_XLOG(0xbac);
 			mdss_fb_report_panel_dead(ctl->mfd);
 		} else if (ctx->pp_timeout_report_cnt == 0) {
+#else
+        if (ctx->pp_timeout_report_cnt == 0) {
+#endif
 			MDSS_XLOG(0xbad);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
 				"dsi1_ctrl", "dsi1_phy", "vbif", "vbif_nrt",
@@ -2174,9 +2182,10 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 			mdss_fb_report_panel_dead(ctl->mfd);
 		}
 
+#ifndef CONFIG_VENDOR_ONEPLUS
 		/* disable te irq */
 		disable_irq_nosync(te_irq);
-
+#endif
 		ctx->pp_timeout_report_cnt++;
 		rc = -EPERM;
 

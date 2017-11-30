@@ -1488,15 +1488,22 @@ static int mdss_dsi_wait4video_eng_busy(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	int ret = 0;
 	u32 v_total = 0, v_blank = 0, sleep_ms = 0, fps = 0;
+#ifdef CONFIG_VENDOR_ONEPLUS
+	struct mdss_panel_info *pinfo = &ctrl->panel_data.panel_info;
+#else
 	struct mdss_panel_info *pinfo;
-
+#endif
+#ifndef CONFIG_VENDOR_ONEPLUS
 	/* for dsi 2.1 and above dma scheduling is used */
 	if ((!ctrl) || (ctrl->panel_mode == DSI_CMD_MODE) ||
 		(ctrl->shared_data->hw_rev > MDSS_DSI_HW_REV_200))
+#else
+	if (ctrl->panel_mode == DSI_CMD_MODE)
+#endif
 		return ret;
-
+#ifndef CONFIG_VENDOR_ONEPLUS
 	pinfo = &ctrl->panel_data.panel_info;
-
+#endif
 	if (ctrl->ctrl_state & CTRL_STATE_MDP_ACTIVE) {
 		mdss_dsi_wait4video_done(ctrl);
 		v_total = mdss_panel_get_vtotal(pinfo);
@@ -1516,6 +1523,7 @@ static int mdss_dsi_wait4video_eng_busy(struct mdss_dsi_ctrl_pdata *ctrl)
 	return ret;
 }
 
+#ifndef CONFIG_VENDOR_ONEPLUS
 static void mdss_dsi_schedule_dma_cmd(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	u32 v_blank, val = 0x0;
@@ -1540,15 +1548,19 @@ static void mdss_dsi_schedule_dma_cmd(struct mdss_dsi_ctrl_pdata *ctrl)
 	pr_debug("%s schedule at line %x", __func__, val);
 	MDSS_XLOG(ctrl->ndx, val);
 }
+#endif
 
 static void mdss_dsi_wait4active_region(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	int in_blanking = 0;
 	int retry_count = 0;
-
+#ifndef CONFIG_VENDOR_ONEPLUS
 	/* for dsi 2.1 and above dma scheduling is used */
 	if ((!ctrl) || (ctrl->panel_mode != DSI_VIDEO_MODE) ||
 		(ctrl->shared_data->hw_rev > MDSS_DSI_HW_REV_200))
+#else
+	if (ctrl->panel_mode != DSI_VIDEO_MODE)
+#endif
 		return;
 
 	while (retry_count != MAX_BTA_WAIT_RETRY) {
@@ -2235,8 +2247,10 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	MIPI_OUTP((ctrl->ctrl_base) + 0x04c, len);
 	wmb();
 
+#ifndef CONFIG_VENDOR_ONEPLUS
 	/* schedule dma cmds at start of blanking region */
 	mdss_dsi_schedule_dma_cmd(ctrl);
+#endif
 
 	/* DSI_CMD_MODE_DMA_SW_TRIGGER */
 	MIPI_OUTP((ctrl->ctrl_base) + 0x090, 0x01);

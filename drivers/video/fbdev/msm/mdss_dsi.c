@@ -394,6 +394,19 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 		pr_err("%s: failed to disable vregs for %s\n",
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
 
+#ifdef CONFIG_VENDOR_ONEPLUS
+        mdss_dsi_disp_poc_en(pdata, 0);
+    
+        mdss_dsi_disp_vci_en(pdata, 0);
+    
+        if (ctrl_pdata->iris_enabled){
+            mdss_dsi_px_1v1_en(pdata, 0);
+        }
+        if (ctrl_pdata->iris_enabled){
+            mdss_dsi_px_clk_req(pdata, 0);
+        }
+#endif
+
 end:
 	return ret;
 }
@@ -411,6 +424,14 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
+#ifdef CONFIG_VENDOR_ONEPLUS
+        if (ctrl_pdata->iris_enabled){
+            mdss_dsi_px_clk_req(pdata, 1);
+            mdss_dsi_px_1v1_en(pdata, 1);
+        }
+        mdss_dsi_disp_poc_en(pdata, 1);
+#endif
+
 	ret = msm_dss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
 		ctrl_pdata->panel_power_data.num_vreg, 1);
@@ -419,6 +440,9 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
 		return ret;
 	}
+#ifdef CONFIG_VENDOR_ONEPLUS
+        mdss_dsi_disp_vci_en(pdata, 1);
+#endif
 
 	/*
 	 * If continuous splash screen feature is enabled, then we need to
@@ -726,8 +750,9 @@ struct buf_data {
 	int sblen; /* string buffer length */
 	int sync_flag;
 	struct mutex dbg_mutex; /* mutex to synchronize read/write/flush */
+#ifdef CONFIG_VENDOR_ONEPLUS
     struct mdss_dsi_ctrl_pdata *ctrl;
-//#endif
+#endif
 };
 
 struct mdss_dsi_debugfs_info {
@@ -931,6 +956,9 @@ static int mdss_dsi_cmd_flush(struct file *file, fl_owner_t id)
 	int blen, len, i;
 	char *buf, *bufp, *bp;
 	struct dsi_ctrl_hdr *dchdr;
+#ifdef CONFIG_VENDOR_ONEPLUS
+	struct mdss_dsi_ctrl_pdata * ctrl_data = pcmds->ctrl;
+#endif
 
 	mutex_lock(&pcmds->dbg_mutex);
 
@@ -1000,6 +1028,11 @@ static int mdss_dsi_cmd_flush(struct file *file, fl_owner_t id)
 		pcmds->buf = buf;
 		pcmds->blen = blen;
 	}
+#ifdef CONFIG_VENDOR_ONEPLUS
+	if ((ctrl_data != NULL) && (ctrl_data->debugfs_info != NULL)){
+        ctrl_data->debugfs_info->override_flag = 1;
+        }
+#endif
 	mutex_unlock(&pcmds->dbg_mutex);
 	return 0;
 }
@@ -1697,19 +1730,24 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 		}
 	}
 
+#ifdef CONFIG_VENDOR_ONEPLUS
     if (!ctrl_pdata->setting_mode_loaded){
         ctrl_pdata->setting_mode_loaded = true;
         mutex_lock(&ctrl_pdata->panel_mode_lock);
         ctrl_pdata->is_panel_on = true;
         mutex_unlock(&ctrl_pdata->panel_mode_lock);
     }
-//#endif
+#endif
 
 	if ((pdata->panel_info.type == MIPI_CMD_PANEL) &&
 		mipi->vsync_enable && mipi->hw_vsync_mode) {
 		mdss_dsi_set_tear_on(ctrl_pdata);
 		if (mdss_dsi_is_te_based_esd(ctrl_pdata))
+#ifdef CONFIG_VENDOR_ONEPLUS
+        	    schedule_delayed_work(&ctrl_pdata->techeck_work, msecs_to_jiffies(3000));
+#else
                        enable_irq(gpio_to_irq(ctrl_pdata->disp_te_gpio));
+#endif
 	}
 
 	ctrl_pdata->ctrl_state |= CTRL_STATE_PANEL_INIT;
@@ -1780,8 +1818,12 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata, int power_state)
 	if ((pdata->panel_info.type == MIPI_CMD_PANEL) &&
 		mipi->vsync_enable && mipi->hw_vsync_mode) {
 		if (mdss_dsi_is_te_based_esd(ctrl_pdata)) {
+#ifdef CONFIG_VENDOR_ONEPLUS
+                cancel_delayed_work_sync(&ctrl_pdata->techeck_work);
+#else
                                 disable_irq(gpio_to_irq(
                                        ctrl_pdata->disp_te_gpio));
+#endif
 
 				atomic_dec(&ctrl_pdata->te_irq_ready);
 		}
@@ -2862,6 +2904,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 					&ctrl_pdata->dba_work, HZ);
 		}
 		break;
+#ifdef CONFIG_VENDOR_ONEPLUS
 	case MDSS_EVENT_PANEL_SET_ACL:
 		ctrl_pdata->acl_mode = (int)(unsigned long) arg;
 		mdss_dsi_panel_set_acl(ctrl_pdata, (int)(unsigned long) ctrl_pdata->acl_mode);
@@ -2913,6 +2956,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 	case MDSS_EVENT_PANEL_GET_NIGHT_MODE:
 		rc = mdss_dsi_panel_get_night_mode(ctrl_pdata);
 		break;
+#endif
 	case MDSS_EVENT_DSI_TIMING_DB_CTRL:
 		mdss_dsi_timing_db_ctrl(ctrl_pdata, (int)(unsigned long)arg);
 		break;
@@ -3353,6 +3397,35 @@ error:
 	return rc;
 }
 
+#ifdef CONFIG_VENDOR_ONEPLUS
+static void techeck_work_func(struct work_struct *work )
+{
+	int ret = 0;
+	int irq = 0;
+    struct mdss_dsi_ctrl_pdata *pdata = NULL;
+	pdata = container_of(to_delayed_work(work),
+		struct mdss_dsi_ctrl_pdata, techeck_work);
+    if (gpio_is_valid(pdata->disp_te_gpio)){
+      irq = gpio_to_irq(pdata->disp_te_gpio);
+    }else{
+        return;
+    }
+	pdata->te_comp.done = 0;
+	enable_irq(irq);
+    ret = wait_for_completion_killable_timeout(&pdata->te_comp,
+						msecs_to_jiffies(300));
+	if (!atomic_read(&pdata->te_irq_ready)){
+		atomic_inc(&pdata->te_irq_ready);
+	}
+	if (ret == 0){
+	    disable_irq(irq);
+		return;
+	}
+	disable_irq(irq);
+	schedule_delayed_work(&pdata->techeck_work, msecs_to_jiffies(3000));
+}
+#endif
+
 static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 {
 	int rc = 0;
@@ -3476,6 +3549,12 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		pr_err("%s: Failed to set dsi splash config\n", __func__);
 		return rc;
 	}
+#ifdef CONFIG_VENDOR_ONEPLUS
+	if (mdss_dsi_is_te_based_esd(ctrl_pdata)) {
+	    init_completion(&ctrl_pdata->te_comp);
+		INIT_DELAYED_WORK(&ctrl_pdata->techeck_work, techeck_work_func);
+	}
+#endif
 
 	if (mdss_dsi_is_te_based_esd(ctrl_pdata)) {
 		rc = devm_request_irq(&pdev->dev,
@@ -4378,6 +4457,7 @@ static int mdss_dsi_parse_gpio_params(struct platform_device *ctrl_pdev,
 		ctrl_pdata->lcd_mode_sel_gpio = -EINVAL;
 	}
 
+#ifdef CONFIG_VENDOR_ONEPLUS
 	ctrl_pdata->disp_vci_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
 		"qcom,platform-vci-gpio", 0);
 	if (!gpio_is_valid(ctrl_pdata->disp_vci_en_gpio))
@@ -4387,21 +4467,27 @@ static int mdss_dsi_parse_gpio_params(struct platform_device *ctrl_pdev,
         ctrl_pdata->px_1v1_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
             "qcom,px-1v1-en-gpio", 0);
         if (!gpio_is_valid(ctrl_pdata->px_1v1_en_gpio))
-            pr_err("%s:%d, px-1v1-en gpio not specified\n", __func__, __LINE__);
+            pr_err("%s:%d, px-1v1-en gpio not specified\n",
+                __func__, __LINE__);
 
-        ctrl_pdata->px_bp_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node, "qcom,px-bp-gpio", 0);
+        ctrl_pdata->px_bp_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+            "qcom,px-bp-gpio", 0);
         if (gpio_is_valid(ctrl_pdata->px_bp_gpio)){
             if (gpio_request(ctrl_pdata->px_bp_gpio, "px-bp-gpio")){
-                pr_err("%s:%d, px_bp_gpio request fail.\n", __func__, __LINE__);
+                pr_err("%s:%d, px_bp_gpio request fail.\n",
+                    __func__, __LINE__);
             }else
                 gpio_direction_output(ctrl_pdata->px_bp_gpio, 0);
         }else{
-            pr_err("%s:%d, px_bp_gpio gpio not specified\n", __func__, __LINE__);
+            pr_err("%s:%d, px_bp_gpio gpio not specified\n",
+                __func__, __LINE__);
         }
 
-        if (!of_property_read_string(ctrl_pdev->dev.of_node, "qcom,px-ext-clk", &ctrl_pdata->px_clk_src_name)){
+        if (!of_property_read_string(ctrl_pdev->dev.of_node,
+            "qcom,px-ext-clk", &ctrl_pdata->px_clk_src_name)){
             if (!strcmp(ctrl_pdata->px_clk_src_name, "BBCLK2")) {
-                ctrl_pdata->px_clk_src = clk_get(&ctrl_pdev->dev, "px_ext_clk");
+                ctrl_pdata->px_clk_src = clk_get(&ctrl_pdev->dev,
+                    "px_ext_clk");
                 if(IS_ERR(ctrl_pdata->px_clk_src)) {
                     pr_err("can not get px_ext_clk\n");
                 }else{
@@ -4416,8 +4502,12 @@ static int mdss_dsi_parse_gpio_params(struct platform_device *ctrl_pdev,
             }
         }
     }
-//#endif
-
+    ctrl_pdata->disp_poc_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+		"qcom,platform-poc-gpio", 0);
+	if (!gpio_is_valid(ctrl_pdata->disp_poc_en_gpio))
+		pr_err("%s:%d, poc gpio not specified\n",
+						__func__, __LINE__);
+#endif
 	return 0;
 }
 
