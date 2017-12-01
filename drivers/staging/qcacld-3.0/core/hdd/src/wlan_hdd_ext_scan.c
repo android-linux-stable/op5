@@ -2399,7 +2399,7 @@ static void hdd_remove_passive_channels(struct wiphy *wiphy,
 	int i, j, k;
 
 	for (i = 0; i < *num_channels; i++)
-		for (j = 0; j < NUM_NL80211_BANDS; j++) {
+		for (j = 0; j < HDD_NUM_NL80211_BANDS; j++) {
 			if (wiphy->bands[j] == NULL)
 				continue;
 			for (k = 0; k < wiphy->bands[j]->n_channels; k++) {
@@ -3142,6 +3142,11 @@ __wlan_hdd_cfg80211_extscan_start(struct wiphy *wiphy,
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EPERM;
+	}
+
+	if (QDF_NDI_MODE == pAdapter->device_mode) {
+		hdd_err("Command not allowed for NDI interface");
 		return -EPERM;
 	}
 

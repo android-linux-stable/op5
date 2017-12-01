@@ -316,7 +316,10 @@ static void lim_process_auth_frame_type1(tpAniSirGlobal mac_ctx,
 		 * pStaDS != NULL and isConnected = 1 means the STA is already
 		 * connected, But SAP received the Auth from that station.
 		 * For non PMF connection send Deauth frame as STA will retry
-		 * to connect back.
+		 * to connect back. The reason for above logic is captured in
+		 * CR620403. If we silently drop the auth, the subsequent EAPOL
+		 * exchange will fail & peer STA will keep trying until DUT
+		 * SAP/GO gets a kickout event from FW & cleans up.
 		 *
 		 * For PMF connection the AP should not tear down or otherwise
 		 * modify the state of the existing association until the
@@ -1128,6 +1131,15 @@ lim_process_auth_frame(tpAniSirGlobal mac_ctx, uint8_t *rx_pkt_info,
 		pe_session->limMlmState, MAC_ADDR_ARRAY(mac_hdr->bssId),
 		(uint) abs((int8_t) WMA_GET_RX_RSSI_NORMALIZED(rx_pkt_info)));
 
+	if (pe_session->prev_auth_seq_num == curr_seq_num) {
+		pe_err("auth frame, seq num: %d is already processed, drop it",
+			curr_seq_num);
+		return;
+	}
+
+	/* save seq number in pe_session */
+	pe_session->prev_auth_seq_num = curr_seq_num;
+
 	body_ptr = WMA_GET_RX_MPDU_DATA(rx_pkt_info);
 
 	/* Restore default failure timeout */
@@ -1201,7 +1213,8 @@ lim_process_auth_frame(tpAniSirGlobal mac_ctx, uint8_t *rx_pkt_info,
 			goto free;
 		}
 
-		if (frame_len < LIM_ENCR_AUTH_BODY_LEN_SAP) {
+		if ((frame_len < LIM_ENCR_AUTH_BODY_LEN_SAP) ||
+		    (frame_len > LIM_ENCR_AUTH_BODY_LEN)) {
 			/* Log error */
 			pe_err("Not enough size: %d to decry rx Auth frm",
 				frame_len);

@@ -1842,6 +1842,8 @@ static void wma_cleanup_vdev_resp_queue(tp_wma_handle wma)
 		return;
 	}
 
+	WMA_LOGD(FL("Cleaning up vdev resp queue"));
+
 	/* peek front, and then cleanup it in wma_vdev_resp_timer */
 	while (qdf_list_peek_front(&wma->vdev_resp_queue, &node1) ==
 				   QDF_STATUS_SUCCESS) {
@@ -2210,12 +2212,14 @@ void wma_vdev_init(struct wma_txrx_node *vdev)
 {
 	qdf_wake_lock_create(&vdev->vdev_start_wakelock, "vdev_start");
 	qdf_wake_lock_create(&vdev->vdev_stop_wakelock, "vdev_stop");
+	qdf_wake_lock_create(&vdev->vdev_set_key_wakelock, "vdev_set_key");
 }
 
 void wma_vdev_deinit(struct wma_txrx_node *vdev)
 {
 	qdf_wake_lock_destroy(&vdev->vdev_start_wakelock);
 	qdf_wake_lock_destroy(&vdev->vdev_stop_wakelock);
+	qdf_wake_lock_destroy(&vdev->vdev_set_key_wakelock);
 }
 
 /**
@@ -3080,6 +3084,11 @@ static int wma_pdev_set_hw_mode_resp_evt_handler(void *handle,
 		 */
 		goto fail;
 	}
+	if (param_buf->fixed_param->num_vdev_mac_entries >=
+						MAX_VDEV_SUPPORTED) {
+		WMA_LOGE("num_vdev_mac_entries crossed max value");
+		goto fail;
+	}
 
 	wmi_event = param_buf->fixed_param;
 	hw_mode_resp->status = wmi_event->status;
@@ -3296,7 +3305,7 @@ static int wma_pdev_set_dual_mode_config_resp_evt_handler(void *handle,
 		 */
 		return QDF_STATUS_E_NULL_VALUE;
 	}
-
+	wma_release_wakelock(&wma->wmi_cmd_rsp_wake_lock);
 	dual_mac_cfg_resp = qdf_mem_malloc(sizeof(*dual_mac_cfg_resp));
 	if (!dual_mac_cfg_resp) {
 		WMA_LOGE("%s: Memory allocation failed", __func__);
@@ -8276,12 +8285,19 @@ QDF_STATUS wma_send_pdev_set_dual_mac_config(tp_wma_handle wma_handle,
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
+	/*
+	 * aquire the wake lock here and release it in response handler function
+	 * In error condition, release the wake lock right away
+	 */
+	wma_acquire_wakelock(&wma_handle->wmi_cmd_rsp_wake_lock,
+			     WMA_VDEV_PLCY_MGR_CMD_TIMEOUT);
 	status = wmi_unified_pdev_set_dual_mac_config_cmd(
 				wma_handle->wmi_handle,
 				(struct wmi_dual_mac_config *)msg);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		WMA_LOGE("%s: Failed to send WMI_PDEV_SET_DUAL_MAC_CONFIG_CMDID: %d",
 				__func__, status);
+		wma_release_wakelock(&wma_handle->wmi_cmd_rsp_wake_lock);
 		return status;
 	}
 	wma_handle->dual_mac_cfg.req_scan_config = msg->scan_config;
@@ -8492,3 +8508,16 @@ QDF_STATUS wma_config_bmiss_bcnt_params(uint32_t vdev_id, uint32_t first_cnt,
 	return status;
 }
 
+QDF_STATUS wma_send_action_oui(WMA_HANDLE handle,
+			       struct wmi_action_oui *action_oui)
+{
+	tp_wma_handle wma_handle = (tp_wma_handle)handle;
+
+	if (wmi_unified_send_action_oui_cmd(wma_handle->wmi_handle,
+					    action_oui)) {
+		WMA_LOGE(FL("WMI_PDEV_CONFIG_VENDOR_OUI_ACTION send fail"));
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
