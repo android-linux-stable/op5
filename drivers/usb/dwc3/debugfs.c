@@ -801,10 +801,17 @@ const struct file_operations dwc3_ep_trb_list_fops = {
 	.release		= single_release,
 };
 
+#ifndef CONFIG_VENDOR_ONEPLUS
 static unsigned int ep_addr_rxdbg_mask = 1;
 module_param(ep_addr_rxdbg_mask, uint, S_IRUGO | S_IWUSR);
 static unsigned int ep_addr_txdbg_mask = 1;
 module_param(ep_addr_txdbg_mask, uint, S_IRUGO | S_IWUSR);
+#else
+static unsigned int ep_addr_rxdbg_mask = 0xFF;
+module_param(ep_addr_rxdbg_mask, uint, S_IRUGO | S_IWUSR);
+static unsigned int ep_addr_txdbg_mask = 0xFF;
+module_param(ep_addr_txdbg_mask, uint, S_IRUGO | S_IWUSR);
+#endif
 
 /* Maximum debug message length */
 #define DBG_DATA_MSG   64UL
