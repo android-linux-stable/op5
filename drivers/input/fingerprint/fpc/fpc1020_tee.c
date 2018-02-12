@@ -55,6 +55,7 @@
 #include <linux/project_info.h>
 #include "../fingerprint_detect/fingerprint_detect.h"
 
+static unsigned int key_disable = 0;
 static unsigned int ignor_home_for_ESD = 0;
 module_param(ignor_home_for_ESD, uint, S_IRUGO | S_IWUSR);
 
@@ -333,6 +334,8 @@ static ssize_t report_home_set(struct device *dev,
 
 	if(ignor_home_for_ESD)
 		return -EINVAL;
+	if(key_disable)
+		return -EINVAL;
 	if (!strncmp(buf, "down", strlen("down")))
 	{
 /*#ifdef VENDOR_EDIT //WayneChang, 2015/12/02, add for key to abs, simulate key in abs through virtual key system
@@ -381,6 +384,21 @@ static ssize_t report_home_set(struct device *dev,
 	return count;
 }
 static DEVICE_ATTR(report_home, S_IWUSR, NULL, report_home_set);
+
+static ssize_t key_disable_set(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	if (!strncmp(buf, "0", strlen("0")))
+	{
+		key_disable = 0;
+	}
+	if (!strncmp(buf, "1", strlen("1")))
+	{
+		key_disable = 1;
+	}
+	return count;
+}
+static DEVICE_ATTR(key_disable, S_IWUSR, NULL, key_disable_set);
 
 static ssize_t report_key_set(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
@@ -456,6 +474,7 @@ static struct attribute *attributes[] = {
 	/*&dev_attr_sensor_version.attr,*/
 	&dev_attr_report_key.attr,
 	&dev_attr_proximity_state.attr,
+	&dev_attr_key_disable.attr,
 	NULL
 };
 
