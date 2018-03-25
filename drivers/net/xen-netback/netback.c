@@ -687,7 +687,6 @@ static void tx_add_credit(struct xenvif_queue *queue)
 		max_credit = ULONG_MAX; /* wrapped: clamp to ULONG_MAX */
 
 	queue->remaining_credit = min(max_credit, max_burst);
-	queue->rate_limited = false;
 }
 
 void xenvif_tx_credit_callback(unsigned long data)
@@ -1185,10 +1184,8 @@ static bool tx_credit_exceeded(struct xenvif_queue *queue, unsigned size)
 		msecs_to_jiffies(queue->credit_usec / 1000);
 
 	/* Timer could already be pending in rare cases. */
-	if (timer_pending(&queue->credit_timeout)) {
-		queue->rate_limited = true;
+	if (timer_pending(&queue->credit_timeout))
 		return true;
-	}
 
 	/* Passed the point where we can replenish credit? */
 	if (time_after_eq64(now, next_credit)) {
@@ -1203,7 +1200,6 @@ static bool tx_credit_exceeded(struct xenvif_queue *queue, unsigned size)
 		mod_timer(&queue->credit_timeout,
 			  next_credit);
 		queue->credit_window_start = next_credit;
-		queue->rate_limited = true;
 
 		return true;
 	}

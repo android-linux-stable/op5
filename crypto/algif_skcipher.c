@@ -86,13 +86,8 @@ static void skcipher_free_async_sgls(struct skcipher_async_req *sreq)
 	}
 	sgl = sreq->tsg;
 	n = sg_nents(sgl);
-	for_each_sg(sgl, sg, n, i) {
-		struct page *page = sg_page(sg);
-
-		/* some SGs may not have a page mapped */
-		if (page && atomic_read(&page->_count))
-			put_page(page);
-	}
+	for_each_sg(sgl, sg, n, i)
+		put_page(sg_page(sg));
 
 	kfree(sreq->tsg);
 }

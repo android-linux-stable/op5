@@ -329,15 +329,12 @@ qla2x00_sysfs_read_optrom(struct file *filp, struct kobject *kobj,
 	struct qla_hw_data *ha = vha->hw;
 	ssize_t rval = 0;
 
-	mutex_lock(&ha->optrom_mutex);
-
 	if (ha->optrom_state != QLA_SREADING)
-		goto out;
+		return 0;
 
+	mutex_lock(&ha->optrom_mutex);
 	rval = memory_read_from_buffer(buf, count, &off, ha->optrom_buffer,
 	    ha->optrom_region_size);
-
-out:
 	mutex_unlock(&ha->optrom_mutex);
 
 	return rval;
@@ -352,19 +349,14 @@ qla2x00_sysfs_write_optrom(struct file *filp, struct kobject *kobj,
 	    struct device, kobj)));
 	struct qla_hw_data *ha = vha->hw;
 
-	mutex_lock(&ha->optrom_mutex);
-
-	if (ha->optrom_state != QLA_SWRITING) {
-		mutex_unlock(&ha->optrom_mutex);
+	if (ha->optrom_state != QLA_SWRITING)
 		return -EINVAL;
-	}
-	if (off > ha->optrom_region_size) {
-		mutex_unlock(&ha->optrom_mutex);
+	if (off > ha->optrom_region_size)
 		return -ERANGE;
-	}
 	if (off + count > ha->optrom_region_size)
 		count = ha->optrom_region_size - off;
 
+	mutex_lock(&ha->optrom_mutex);
 	memcpy(&ha->optrom_buffer[off], buf, count);
 	mutex_unlock(&ha->optrom_mutex);
 

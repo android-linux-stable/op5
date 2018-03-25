@@ -717,11 +717,8 @@ static inline struct Qdisc *qdisc_replace(struct Qdisc *sch, struct Qdisc *new,
 	old = *pold;
 	*pold = new;
 	if (old != NULL) {
-		unsigned int qlen = old->q.qlen;
-		unsigned int backlog = old->qstats.backlog;
-
+		qdisc_tree_reduce_backlog(old, old->q.qlen, old->qstats.backlog);
 		qdisc_reset(old);
-		qdisc_tree_reduce_backlog(old, qlen, backlog);
 	}
 	sch_tree_unlock(sch);
 

@@ -1247,9 +1247,6 @@ int drm_atomic_check_only(struct drm_atomic_state *state)
 	if (config->funcs->atomic_check)
 		ret = config->funcs->atomic_check(state->dev, state);
 
-	if (ret)
-		return ret;
-
 	if (!state->allow_modeset) {
 		for_each_crtc_in_state(state, crtc, crtc_state, i) {
 			if (drm_atomic_crtc_needs_modeset(crtc_state)) {
@@ -1260,7 +1257,7 @@ int drm_atomic_check_only(struct drm_atomic_state *state)
 		}
 	}
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(drm_atomic_check_only);
 
