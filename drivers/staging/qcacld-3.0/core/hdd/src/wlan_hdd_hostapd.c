@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -203,6 +203,7 @@ int hdd_sap_context_init(hdd_context_t *hdd_ctx)
 	qdf_spinlock_create(&hdd_ctx->sap_update_info_lock);
 
 	qdf_atomic_init(&hdd_ctx->dfs_radar_found);
+	qdf_atomic_init(&hdd_ctx->is_acs_allowed);
 
 	return 0;
 }
@@ -1408,9 +1409,15 @@ static int hdd_convert_dot11mode_from_phymode(int phymode)
 static void hdd_fill_station_info(hdd_adapter_t *pHostapdAdapter,
 				  tSap_StationAssocReassocCompleteEvent *event)
 {
-	hdd_station_info_t *stainfo = &pHostapdAdapter->aStaInfo[event->staId];
+	hdd_station_info_t *stainfo;
 	uint8_t i = 0;
 
+	if (event->staId >= WLAN_MAX_STA_COUNT) {
+		hdd_err("invalid sta id");
+		return;
+	}
+
+	stainfo = &pHostapdAdapter->aStaInfo[event->staId];
 	if (!stainfo) {
 		hdd_err("invalid stainfo");
 		return;
@@ -1445,15 +1452,34 @@ static void hdd_fill_station_info(hdd_adapter_t *pHostapdAdapter,
 	/* expect max_phy_rate report in kbps */
 	stainfo->max_phy_rate *= 100;
 
-	if (event->vht_caps.present)
+	if (event->vht_caps.present) {
+		stainfo->vht_present = true;
 		hdd_copy_vht_caps(&stainfo->vht_caps, &event->vht_caps);
-	if (event->ht_caps.present)
+	}
+	if (event->ht_caps.present) {
+		stainfo->ht_present = true;
 		hdd_copy_ht_caps(&stainfo->ht_caps, &event->ht_caps);
+	}
 
 	while (i < WLAN_MAX_STA_COUNT) {
-		if (pHostapdAdapter->cache_sta_info[i].isUsed != TRUE)
+		if (!qdf_mem_cmp(pHostapdAdapter->
+				 cache_sta_info[i].macAddrSTA.bytes,
+				 event->staMac.bytes,
+				 QDF_MAC_ADDR_SIZE)) {
+			qdf_mem_zero(&pHostapdAdapter->cache_sta_info[i],
+				     sizeof(*stainfo));
 			break;
+		}
 		i++;
+	}
+
+	if (i == WLAN_MAX_STA_COUNT) {
+		i = 0;
+		while (i < WLAN_MAX_STA_COUNT) {
+			if (pHostapdAdapter->cache_sta_info[i].isUsed != TRUE)
+				break;
+			i++;
+		}
 	}
 	if (i < WLAN_MAX_STA_COUNT)
 		qdf_mem_copy(&pHostapdAdapter->cache_sta_info[i],
@@ -1519,6 +1545,7 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 	bool legacy_phymode;
 	tSap_StationDisassocCompleteEvent *disconnect_event;
 	hdd_station_info_t *stainfo;
+	cds_context_type *cds_ctx;
 
 	dev = (struct net_device *)usrDataForCallback;
 	if (!dev) {
@@ -1558,6 +1585,13 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 		return QDF_STATUS_E_FAILURE;
 	}
 
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+	if (!cds_ctx) {
+		hdd_err("QDF context is null");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+
 	dfs_info.channel = pHddApCtx->operatingChannel;
 	sme_get_country_code(pHddCtx->hHal, dfs_info.country_code, &cc_len);
 
@@ -1577,6 +1611,14 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 			pSapEvent->sapevt.sapStartBssCompleteEvent.status;
 
 		qdf_atomic_set(&pHddCtx->dfs_radar_found, 0);
+
+		status = qdf_event_set(&cds_ctx->channel_switch_complete);
+
+		if (!QDF_IS_STATUS_SUCCESS(status)) {
+			hdd_err("set event failed");
+			goto stopbss;
+		}
+
 		wlansap_get_dfs_ignore_cac(pHddCtx->hHal, &ignoreCAC);
 
 		/* DFS requirement: DO NOT transmit during CAC. */
@@ -2495,6 +2537,7 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 		/* send vendor event to hostapd only for hostapd based acs*/
 		if (!pHddCtx->config->force_sap_acs)
 			wlan_hdd_cfg80211_acs_ch_select_evt(pHostapdAdapter);
+		qdf_atomic_set(&pHddCtx->is_acs_allowed, 0);
 		return QDF_STATUS_SUCCESS;
 	case eSAP_ECSA_CHANGE_CHAN_IND:
 		hdd_debug("Channel change indication from peer for channel %d",
@@ -2713,6 +2756,7 @@ int hdd_softap_set_channel_change(struct net_device *dev, int target_channel,
 	hdd_context_t *pHddCtx = NULL;
 	hdd_adapter_t *sta_adapter;
 	hdd_station_ctx_t *sta_ctx;
+	cds_context_type *cds_ctx;
 
 	pHddCtx = WLAN_HDD_GET_CTX(pHostapdAdapter);
 	ret = wlan_hdd_validate_context(pHddCtx);
@@ -2740,7 +2784,13 @@ int hdd_softap_set_channel_change(struct net_device *dev, int target_channel,
 			return -EBUSY;
 		}
 	}
-
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+	if (!cds_ctx) {
+		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_FATAL,
+				"%s: Trying to open CDS without a PreOpen",
+				__func__);
+		return -EINVAL;
+	}
 	/*
 	 * Set the dfs_radar_found flag to mimic channel change
 	 * when a radar is found. This will enable synchronizing
@@ -2755,6 +2805,12 @@ int hdd_softap_set_channel_change(struct net_device *dev, int target_channel,
 		return -EBUSY;
 	}
 
+	status = qdf_event_reset(&cds_ctx->channel_switch_complete);
+
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		cds_err("clear event failed");
+		return -EINVAL;
+	}
 	/*
 	 * Post the Channel Change request to SAP.
 	 */
@@ -8268,10 +8324,12 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 			pConfig->ch_width_orig = CH_WIDTH_20MHZ;
 	}
 
-	if (cds_is_force_scc() &&
+	if (!wma_is_hw_dbs_capable() &&
+			(pHostapdAdapter->device_mode == QDF_SAP_MODE) &&
+			cds_is_force_scc() &&
 			cds_mode_specific_get_channel(CDS_STA_MODE)) {
 		pConfig->channel = cds_mode_specific_get_channel(CDS_STA_MODE);
-		hdd_debug("force SCC is enabled and STA is active, override the SAP channel to %d",
+		hdd_debug("DBS is disabled, force SCC is enabled and STA is active, override the SAP channel to %d",
 				pConfig->channel);
 	} else if (wlan_hdd_setup_driver_overrides(pHostapdAdapter)) {
 		ret = -EINVAL;

@@ -968,7 +968,7 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
 	rq->clock_task += delta;
 
 #if defined(CONFIG_IRQ_TIME_ACCOUNTING) || defined(CONFIG_PARAVIRT_TIME_ACCOUNTING)
-	if ((irq_delta + steal) && sched_feat(NONTASK_CAPACITY))
+	if ((irq_delta + steal) & sched_feat(NONTASK_CAPACITY))
 		sched_rt_avg_update(rq, irq_delta + steal);
 #endif
 }
@@ -2343,11 +2343,11 @@ void sched_exit(struct task_struct *p)
 	reset_task_stats(p);
 	p->ravg.mark_start = wallclock;
 	p->ravg.sum_history[0] = EXITING_TASK_MARKER;
-	free_task_load_ptrs(p);
 
 	enqueue_task(rq, p, 0);
 	clear_ed_task(p, rq);
 	task_rq_unlock(rq, p, &flags);
+	free_task_load_ptrs(p);
 }
 #endif /* CONFIG_SCHED_HMP */
 
@@ -4995,6 +4995,15 @@ long sched_getaffinity(pid_t pid, struct cpumask *mask)
 
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
 	cpumask_and(mask, &p->cpus_allowed, cpu_active_mask);
+
+	/*
+	 * The userspace tasks are forbidden to run on
+	 * isolated CPUs. So exclude isolated CPUs from
+	 * the getaffinity.
+	 */
+	if (!(p->flags & PF_KTHREAD))
+		cpumask_andnot(mask, mask, cpu_isolated_mask);
+
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 
 out_unlock:

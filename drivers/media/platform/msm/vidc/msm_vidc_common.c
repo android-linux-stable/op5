@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -712,16 +712,16 @@ static void handle_sys_init_done(enum hal_command_response cmd, void *data)
 	return;
 }
 
+static void put_inst_helper(struct kref *kref)
+{
+	struct msm_vidc_inst *inst = container_of(kref, struct msm_vidc_inst,
+			kref);
+
+	msm_vidc_destroy(inst);
+}
+
 static void put_inst(struct msm_vidc_inst *inst)
 {
-	void put_inst_helper(struct kref *kref)
-	{
-		struct msm_vidc_inst *inst = container_of(kref,
-				struct msm_vidc_inst, kref);
-
-		msm_vidc_destroy(inst);
-	}
-
 	if (!inst)
 		return;
 
@@ -1135,8 +1135,7 @@ static void handle_event_change(enum hal_command_response cmd, void *data)
 	case HAL_EVENT_SEQ_CHANGED_SUFFICIENT_RESOURCES:
 		rc = msm_comm_g_ctrl_for_id(inst,
 			V4L2_CID_MPEG_VIDC_VIDEO_CONTINUE_DATA_TRANSFER);
-		if (!is_thumbnail_session(inst) &&
-			(IS_ERR_VALUE(rc) || rc == false))
+		if ((IS_ERR_VALUE(rc) || rc == false))
 			event = V4L2_EVENT_SEQ_CHANGED_INSUFFICIENT;
 		else
 			event = V4L2_EVENT_SEQ_CHANGED_SUFFICIENT;
@@ -3818,17 +3817,17 @@ int msm_comm_qbuf(struct msm_vidc_inst *inst, struct vb2_buffer *vb)
 	 * Don't queue if:
 	 * 1) Hardware isn't ready (that's simple)
 	 */
-	defer = defer ?: inst->state != MSM_VIDC_START_DONE;
+	defer = defer || (inst->state != MSM_VIDC_START_DONE);
 
 	/*
 	 * 2) The client explicitly tells us not to because it wants this
 	 * buffer to be batched with future frames.  The batch size (on both
 	 * capabilities) is completely determined by the client.
 	 */
-	defer = defer ?: vbuf && vbuf->flags & V4L2_MSM_BUF_FLAG_DEFER;
+	defer = defer || (vbuf && vbuf->flags & V4L2_MSM_BUF_FLAG_DEFER);
 
 	/* 3) If we're in batch mode, we must have full batches of both types */
-	defer = defer ?: batch_mode && (!output_count || !capture_count);
+	defer = defer || (batch_mode && (!output_count || !capture_count));
 
 	if (defer) {
 		dprintk(VIDC_DBG, "Deferring queue of %pK\n", vb);
