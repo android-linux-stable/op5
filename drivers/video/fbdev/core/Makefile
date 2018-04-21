@@ -17,4 +17,4 @@ obj-$(CONFIG_FB_SVGALIB)       += svgalib.o
 obj-$(CONFIG_FB_DDC)           += fb_ddc.o
 
 # Ignore false warning
-CFLAGS_fbmon.o := -Wno-int-in-bool-context
+CFLAGS_fbmon.o := $(call cc-disable-warning, int-in-bool-context)
