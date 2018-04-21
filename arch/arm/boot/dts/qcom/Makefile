@@ -187,7 +187,8 @@ dtb-$(CONFIG_VENDOR_ONEPLUS) += \
         cheeseburger-v2.1-pvt.dtb \
         cheeseburger-v2.1-pvt1.dtb \
         dumpling-v2.1-dvt.dtb \
-        dumpling-v2.1-pvt.dtb
+        dumpling-v2.1-pvt.dtb \
+        dumpling-v2.1-Second_Resource.dtb
 
 dtb-$(CONFIG_ARCH_MSMHAMSTER) += msmhamster-rumi.dtb
 
