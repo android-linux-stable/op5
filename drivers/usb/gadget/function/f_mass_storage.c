@@ -2364,6 +2364,7 @@ static int fsg_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 	pr_err("%s: end\n", __func__);
 	#else
 	raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE);
+        #endif
 	return USB_GADGET_DELAYED_STATUS;
 
 reset_bulk_int:

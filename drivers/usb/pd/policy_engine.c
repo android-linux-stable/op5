@@ -309,7 +309,7 @@ struct usbpd {
 	struct device		dev;
 	struct workqueue_struct	*wq;
 	struct work_struct	sm_work;
-#ifdef VENDOR_EDIT
+#ifdef CONFIG_VENDOR_ONEPLUS
 /*2018/03/19 handle xiaomi typec headset dsp crash issue*/
 	struct delayed_work	vbus_work;
 #endif
@@ -3184,7 +3184,7 @@ static ssize_t hard_reset_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(hard_reset);
 
-#ifdef VENDOR_EDIT
+#ifdef CONFIG_VENDOR_ONEPLUS
 /*2018/03/19 handle xiaomi typec headset dsp crash issue*/
 struct usbpd *pd_lobal;
 unsigned int pd_vbus_ctrl;
@@ -3292,7 +3292,7 @@ static struct attribute *usbpd_attrs[] = {
 	&dev_attr_rdo.attr,
 	&dev_attr_rdo_h.attr,
 	&dev_attr_hard_reset.attr,
-#ifdef VENDOR_EDIT
+#ifdef CONFIG_VENDOR_ONEPLUS
 /*2018/03/19 handle xiaomi typec headset dsp crash issue*/
 	&dev_attr_pd_vbus.attr,
 #endif
@@ -3410,7 +3410,7 @@ struct usbpd *usbpd_create(struct device *parent)
 		goto del_pd;
 	}
 	INIT_WORK(&pd->sm_work, usbpd_sm);
-#ifdef VENDOR_EDIT
+#ifdef CONFIG_VENDOR_ONEPLUS
 /*2017/03/19 handle xiaomi typec headset dsp crash issue*/
 	INIT_DELAYED_WORK(&pd->vbus_work, usbpd_vbus_sm);
 #endif
@@ -3539,7 +3539,7 @@ struct usbpd *usbpd_create(struct device *parent)
 	/* force read initial power_supply values */
 	psy_changed(&pd->psy_nb, PSY_EVENT_PROP_CHANGED, pd->usb_psy);
 
-#ifdef VENDOR_EDIT
+#ifdef CONFIG_VENDOR_ONEPLUS
 /*2018/03/19 handle xiaomi typec headset dsp crash issue*/
 	pd_lobal = pd;
 #endif
