@@ -184,6 +184,9 @@ ifeq ($(KERNEL_BUILD), 0)
 	#Flag to enable offload packets feature
 	CONFIG_WLAN_OFFLOAD_PACKETS := y
 
+	#Flag to enable packet capture mode
+	CONFIG_WLAN_FEATURE_PKT_CAPTURE := y
+
 	#enable TSF get feature
 	CONFIG_WLAN_SYNC_TSF := y
 	#Enable DSRC feature
@@ -241,26 +244,6 @@ endif
 
 endif
 
-
-# As per target team, build is done as follows:
-# Defconfig : build with default flags
-# Slub      : defconfig  + CONFIG_SLUB_DEBUG=y +
-#	      CONFIG_SLUB_DEBUG_ON=y + CONFIG_PAGE_POISONING=y
-# Perf      : Using appropriate msmXXXX-perf_defconfig
-#
-# Shipment builds (user variants) should not have any debug feature
-# enabled. This is identified using 'TARGET_BUILD_VARIANT'. Slub builds
-# are identified using the CONFIG_SLUB_DEBUG_ON configuration. Since
-# there is no other way to identify defconfig builds, QCOMs internal
-# representation of perf builds (identified using the string 'perf'),
-# is used to identify if the build is a slub or defconfig one. This
-# way no critical debug feature will be enabled for perf and shipment
-# builds. Other OEMs are also protected using the TARGET_BUILD_VARIANT
-# config.
-ifneq ($(TARGET_BUILD_VARIANT),user)
-	CONFIG_FEATURE_PKTLOG := y
-endif
-
 #enable spectral scan feature
 CONFIG_WLAN_SPECTRAL_SCAN := y
 
@@ -290,6 +273,9 @@ endif
 ifneq ($(CONFIG_MOBILE_ROUTER), y)
 CONFIG_QCOM_ESE := y
 endif
+
+#Enable beacon reporting feature
+CONFIG_WLAN_BEACON_REPORTING := y
 
 # Feature flags which are not (currently) configurable via Kconfig
 
@@ -1313,6 +1299,10 @@ ifeq ($(CONFIG_WLAN_FEATURE_FILS),y)
 CDEFINES += -DWLAN_FEATURE_FILS_SK
 endif
 
+ifeq ($(CONFIG_WLAN_FEATURE_PKT_CAPTURE),y)
+CDEFINES += -DWLAN_FEATURE_PKT_CAPTURE
+endif
+
 ifeq ($(CONFIG_CNSS), y)
 ifeq ($(CONFIG_CNSS_SDIO), y)
 CDEFINES += -DCONFIG_PLD_SDIO_CNSS
@@ -1455,6 +1445,10 @@ ifeq ($(CONFIG_WLAN_FEATURE_SAE),y)
 CDEFINES += -DWLAN_FEATURE_SAE
 endif
 
+ifeq ($(CONFIG_WLAN_BEACON_REPORTING),y)
+CDEFINES += -DNTH_BEACON_OFFLOAD
+endif
+
 ifeq ($(BUILD_DIAG_VERSION),1)
 CDEFINES += -DFEATURE_WLAN_DIAG_SUPPORT
 CDEFINES += -DFEATURE_WLAN_DIAG_SUPPORT_CSR
@@ -1486,7 +1480,7 @@ ifeq ($(CONFIG_WLAN_FEATURE_LPSS),y)
 CDEFINES += -DWLAN_FEATURE_LPSS
 endif
 
-ifneq ($(TARGET_BUILD_VARIANT),user)
+ifeq ($(CONFIG_QCA_CLD_DEBUG),y)
 CDEFINES += -DDESC_DUP_DETECT_DEBUG
 CDEFINES += -DDEBUG_RX_RING_BUFFER
 endif
