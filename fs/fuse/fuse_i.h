@@ -257,6 +257,7 @@ struct fuse_io_priv {
 	size_t size;
 	__u64 offset;
 	bool write;
+	bool should_dirty;
 	int err;
 	struct kiocb *iocb;
 	struct file *file;
@@ -858,6 +859,7 @@ void fuse_request_send_background_locked(struct fuse_conn *fc,
 
 /* Abort all requests */
 void fuse_abort_conn(struct fuse_conn *fc);
+void fuse_wait_aborted(struct fuse_conn *fc);
 
 /**
  * Invalidate inode attributes
@@ -900,6 +902,8 @@ void fuse_ctl_remove_conn(struct fuse_conn *fc);
  * Is file type valid?
  */
 int fuse_valid_type(int m);
+
+bool fuse_invalid_attr(struct fuse_attr *attr);
 
 /**
  * Is current process allowed to perform filesystem operation?
